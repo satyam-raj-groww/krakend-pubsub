@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/pomozoff/bigqueue"
 	"io"
 	"io/ioutil"
 
@@ -77,6 +78,14 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 		return proxy.NoopProxy, err
 	}
 
+	var queue = new(bigqueue.FileQueue)
+	var bqError = queue.Open("/Users/satyamraj/work/bqueue", "krakend-queue", nil)
+
+	if bqError != nil {
+		f.logger.Error(fmt.Sprintf(logPrefix, "Error initilaizing system queue: ", bqError.Error()))
+	}
+
+	f.logger.Debug(logPrefix, "System queue initialized sucessfully")
 	f.logger.Debug(logPrefix, "Publisher initialized sucessfully")
 
 	go func() {
@@ -98,11 +107,33 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 			Body:     body,
 		}
 
-		if err := t.Send(ctx, msg); err != nil {
+		f.logger.Info("Saving to queue: ", msg)
+		saveToQueue(queue, msg)
+
+		_, qmsg, _ := queue.Dequeue()
+		qmsgToSend := &pubsub.Message{
+			Metadata: headers,
+			Body:     qmsg,
+		}
+
+		f.logger.Info("Sending to kafka: ", qmsgToSend)
+		err = t.Send(ctx, qmsgToSend)
+
+		if err != nil {
+			f.logger.Error("Error sending to kafka, saving to queue: ", qmsgToSend)
+			saveToQueue(queue, qmsgToSend)
 			return nil, err
 		}
 		return &proxy.Response{IsComplete: true}, nil
 	}, nil
+}
+
+func saveToQueue(queue *bigqueue.FileQueue, msg *pubsub.Message) {
+	_, err := queue.Enqueue(msg.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 }
 
 func (f *BackendFactory) initSubscriber(ctx context.Context, remote *config.Backend) (proxy.Proxy, error) {

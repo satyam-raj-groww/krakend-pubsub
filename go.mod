@@ -87,3 +87,5 @@ require (
 	google.golang.org/protobuf v1.28.0 // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
 )
+
+replace github.com/pomozoff/bigqueue => ./bigqueue

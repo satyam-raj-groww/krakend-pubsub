@@ -79,7 +79,7 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 	}
 
 	var queue = new(bigqueue.FileQueue)
-	var bqError = queue.Open("/var/log", "krakend-queue", nil)
+	var bqError = queue.Open("/Users/satyamraj", "krakend-queue", nil)
 
 	if bqError != nil {
 		f.logger.Error(fmt.Sprintf(logPrefix, "Error initilaizing system queue: ", bqError.Error()))
@@ -87,6 +87,7 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 
 	f.logger.Debug(logPrefix, "System queue initialized sucessfully")
 	f.logger.Debug(logPrefix, "Publisher initialized sucessfully")
+	emptyQueue(queue, t, f)
 
 	go func() {
 		<-ctx.Done()
@@ -107,29 +108,34 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 			Body:     body,
 		}
 
-		f.logger.Info("Saving to queue: ", msg)
-		saveToQueue(queue, msg)
-
-		_, qmsg, _ := queue.Dequeue()
-		qmsgToSend := &pubsub.Message{
-			Metadata: headers,
-			Body:     qmsg,
-		}
-
-		f.logger.Info("Sending to kafka: ", qmsgToSend)
-		err = t.Send(ctx, qmsgToSend)
+		f.logger.Info("Sending to kafka: ", msg)
+		err = t.Send(ctx, msg)
 
 		if err != nil {
-			f.logger.Error("Error sending to kafka, saving to queue: ", qmsgToSend)
-			saveToQueue(queue, qmsgToSend)
+			f.logger.Error("Error sending to kafka, saving to queue: ", msg)
+			saveToQueue(queue, msg.Body)
 			return nil, err
+		} else {
+			emptyQueue(queue, t, f)
 		}
 		return &proxy.Response{IsComplete: true}, nil
 	}, nil
 }
 
-func saveToQueue(queue *bigqueue.FileQueue, msg *pubsub.Message) {
-	_, err := queue.Enqueue(msg.Body)
+func emptyQueue(queue *bigqueue.FileQueue, t *pubsub.Topic, f *BackendFactory) {
+	for queue.IsEmpty() == false {
+		_, qmsg, _ := queue.Dequeue()
+		qmsgToSend := &pubsub.Message{
+			Metadata: map[string]string{},
+			Body:     qmsg,
+		}
+		f.logger.Info("Sending to kafka from queue: ", qmsgToSend)
+		_ = t.Send(context.Background(), qmsgToSend)
+	}
+}
+
+func saveToQueue(queue *bigqueue.FileQueue, msgBody []byte) {
+	_, err := queue.Enqueue(msgBody)
 	if err != nil {
 		fmt.Println(err)
 		return

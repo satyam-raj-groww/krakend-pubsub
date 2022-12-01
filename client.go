@@ -79,7 +79,7 @@ func (f *BackendFactory) initPublisher(ctx context.Context, remote *config.Backe
 	}
 
 	var queue = new(bigqueue.FileQueue)
-	var bqError = queue.Open("/Users/satyamraj/work/bqueue", "krakend-queue", nil)
+	var bqError = queue.Open("/var/log", "krakend-queue", nil)
 
 	if bqError != nil {
 		f.logger.Error(fmt.Sprintf(logPrefix, "Error initilaizing system queue: ", bqError.Error()))
